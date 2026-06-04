@@ -4,6 +4,7 @@ const axios = require('axios');
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
 const { notifyPayment, getAdminNotifications, markNotificationAsRead } = require('./notifications');
+const aiMatchesService = require('./ai-matches-service');
 
 dotenv.config();
 
@@ -54,6 +55,143 @@ async function getMpesaAccessToken() {
     throw error;
   }
 }
+
+// ============================================
+// AI MATCHES API ENDPOINTS
+// ============================================
+
+/**
+ * GET /api/matches/live
+ * Fetch all live matches with AI-generated odds
+ */
+app.get('/api/matches/live', async (req, res) => {
+  try {
+    const liveMatches = await aiMatchesService.fetchLiveMatches();
+    res.json({
+      success: true,
+      count: liveMatches.length,
+      matches: liveMatches,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    console.error('Error fetching live matches:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching live matches',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/matches/upcoming
+ * Fetch upcoming matches
+ */
+app.get('/api/matches/upcoming', (req, res) => {
+  try {
+    const upcomingMatches = aiMatchesService.getUpcomingMatches();
+    res.json({
+      success: true,
+      count: upcomingMatches.length,
+      matches: upcomingMatches,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching upcoming matches',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/matches/all
+ * Fetch all matches (live + upcoming)
+ */
+app.get('/api/matches/all', async (req, res) => {
+  try {
+    const allMatches = await aiMatchesService.getAllMatches();
+    res.json({
+      success: true,
+      data: allMatches,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching all matches',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/matches/:id
+ * Get specific match details
+ */
+app.get('/api/matches/:id', async (req, res) => {
+  try {
+    const allMatches = await aiMatchesService.getAllMatches();
+    const match = [...allMatches.live, ...allMatches.upcoming].find(
+      m => m.id === parseInt(req.params.id)
+    );
+
+    if (!match) {
+      return res.status(404).json({
+        success: false,
+        message: 'Match not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      match,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching match',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/matches/odds/:matchId
+ * Get updated odds for a specific match (with AI adjustment)
+ */
+app.post('/api/matches/odds/:matchId', async (req, res) => {
+  try {
+    const { goals, updateType } = req.body;
+    const matchId = parseInt(req.params.matchId);
+
+    // Create mock match for odds calculation
+    const mockMatch = {
+      teams: {
+        home: { name: 'Team A' },
+        away: { name: 'Team B' },
+      },
+      goals: goals || { home: 0, away: 0 },
+    };
+
+    const odds = aiMatchesService.generateDynamicOdds(mockMatch);
+
+    res.json({
+      success: true,
+      matchId,
+      odds,
+      updateType: updateType || 'standard',
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error calculating odds',
+      error: error.message,
+    });
+  }
+});
 
 // ============================================
 // INITIATE M-PESA STK PUSH (DEPOSIT)
@@ -451,4 +589,5 @@ app.listen(PORT, () => {
   console.log(`📱 M-Pesa Integration Active`);
   console.log(`🔗 Callback URL: ${MPESA_CONFIG.callbackUrl}`);
   console.log(`📢 Payment Notifications Active - Owner: ${process.env.OWNER_PHONE || '+254799941621'}`);
+  console.log(`🎮 AI Matches Service Active`);
 });
