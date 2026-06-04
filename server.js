@@ -3,6 +3,7 @@ const cors = require('cors');
 const axios = require('axios');
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
+const { notifyPayment, getAdminNotifications, markNotificationAsRead } = require('./notifications');
 
 dotenv.config();
 
@@ -200,6 +201,19 @@ app.post('/api/mpesa/callback', (req, res) => {
         });
 
         console.log(`✅ Payment successful for ${userEmail}: KES ${amount}`);
+
+        // ============================================
+        // SEND NOTIFICATION TO OWNER
+        // ============================================
+        notifyPayment({
+          userEmail,
+          phoneNumber,
+          amount,
+          mpesaReceiptNumber,
+          transactionDate,
+          checkoutRequestId,
+          status: 'completed',
+        });
       } else {
         // Payment failed
         transactions[checkoutRequestId].status = 'failed';
@@ -368,6 +382,56 @@ app.post('/api/mpesa/withdraw', async (req, res) => {
 });
 
 // ============================================
+// GET ADMIN NOTIFICATIONS
+// ============================================
+app.get('/api/admin/notifications', (req, res) => {
+  try {
+    const limit = req.query.limit || 20;
+    const notifications = getAdminNotifications(limit);
+
+    res.json({
+      success: true,
+      count: notifications.length,
+      notifications,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching notifications',
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// MARK NOTIFICATION AS READ
+// ============================================
+app.put('/api/admin/notifications/:id/read', (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = markNotificationAsRead(parseInt(id));
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      notification,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating notification',
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
 // HEALTH CHECK
 // ============================================
 app.get('/api/health', (req, res) => {
@@ -386,4 +450,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Betting Platform Backend running on port ${PORT}`);
   console.log(`📱 M-Pesa Integration Active`);
   console.log(`🔗 Callback URL: ${MPESA_CONFIG.callbackUrl}`);
+  console.log(`📢 Payment Notifications Active - Owner: ${process.env.OWNER_PHONE || '+254799941621'}`);
 });
